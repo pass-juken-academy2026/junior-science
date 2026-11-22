@@ -71,6 +71,7 @@ async function copyMockText(kind) {
     if (status) status.textContent = '自動コピーできませんでした。ブラウザの権限を確認してください。';
   }
 }
+function pdfText(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;'); }
 function exportMockPdf(kind) {
   if (!Array.isArray(mock) || !mock.length) { alert('先に模擬テストを開始してください。'); return; }
   if (!['questions', 'answers', 'combined'].includes(kind)) { alert('出力形式を確認してください。'); return; }
