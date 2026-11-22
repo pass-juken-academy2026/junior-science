@@ -27,6 +27,7 @@ const assert = require('node:assert/strict');
    ['問題＋解答PDF', '<section class="answers"><h1>解答・解説</h1>', '解答・解説']
   ]) {
    await page.getByRole('button',{name:label}).click();
+   await page.waitForFunction(() => window.__pdfOpenCalls > 0, { timeout: 5000 });
    const html = await page.evaluate(() => window.__pdfHtml);
    assert.ok(html.includes('<!doctype html>'), label+' HTML document');
    assert.ok(html.includes(heading), label+' expected section');
