@@ -47,7 +47,7 @@ jobs:
               for n,js in enumerate(a.scripts):
                   if not js.strip(): continue
                   p=Path(tempfile.gettempdir())/f'inline-{abs(hash((str(f),n)))}.js'
-                  p.write_text('async function __auditInlineScript(){\n'+js+'\n}\n',encoding='utf-8')
+                  p.write_text(js,encoding='utf-8')
                   r=subprocess.run(['node','--check',str(p)],capture_output=True,text=True)
                   if r.returncode: print(f'JavaScript syntax error in {f} script {n+1}:\n{r.stderr}'); failed=True
               print(f'Checked {f}: {len(a.scripts)} inline script(s), {len(a.ids)} IDs')
