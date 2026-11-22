@@ -6,11 +6,11 @@ const assert = require('node:assert/strict');
   const page = await browser.newPage();
   await page.goto('http://127.0.0.1:4173/index.html');
   await page.click('[data-tab="6"]');
-  await page.click('[data-tab="6"]');
+  await page.waitForSelector('[data-panel="6"].active');
   await page.click('[data-start]');
   await page.waitForSelector('[data-mock] .answer');
   for (const label of ['問題のみPDF','解答・解説PDF','問題＋解答PDF']) {
-   const pending = page.waitForEvent('popup');
+   const pending = page.context().waitForEvent('page');
    await page.getByRole('button',{name:label}).click();
    const popup = await pending;
    await popup.waitForLoadState('domcontentloaded');
