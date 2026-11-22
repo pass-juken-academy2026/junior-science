@@ -11,10 +11,14 @@ const assert = require('node:assert/strict');
   await page.waitForSelector('[data-mock] .answer');
   await page.evaluate(() => {
    window.__pdfHtml = '';
-   window.open = () => ({ document: {
-    open() {},
-    write(html) { window.__pdfHtml = html; },
-    close() {}
+   window.__pdfOpenCalls = 0;
+   Object.defineProperty(window, 'open', { configurable: true, value: () => {
+    window.__pdfOpenCalls++;
+    return { document: {
+     open() {},
+     write(html) { window.__pdfHtml = html; },
+     close() {}
+    }};
    }});
   });
   for (const [label, heading, shouldContain] of [
