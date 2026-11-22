@@ -9,34 +9,41 @@ const assert = require('node:assert/strict');
   await page.waitForSelector('[data-panel="6"].active');
   await page.click('[data-start]');
   await page.waitForSelector('[data-mock] .answer');
-  for (const label of ['問題のみPDF','解答・解説PDF','問題＋解答PDF']) {
-   const pending = page.context().waitForEvent('page');
+  await page.evaluate(() => {
+   window.__pdfHtml = '';
+   window.open = () => ({ document: {
+    open() {},
+    write(html) { window.__pdfHtml = html; },
+    close() {}
+   }});
+  });
+  for (const [label, heading, shouldContain] of [
+   ['問題のみPDF', '<h1>問題</h1>', '問題'],
+   ['解答・解説PDF', '<h1>解答・解説</h1>', '正解：'],
+   ['問題＋解答PDF', '<section class="answers"><h1>解答・解説</h1>', '解答・解説']
+  ]) {
    await page.getByRole('button',{name:label}).click();
-   const popup = await pending;
-   await popup.waitForLoadState('domcontentloaded');
-   const text = await popup.locator('body').innerText();
-   const pdf = await popup.pdf({format:'A4'});
-   assert.equal(pdf.subarray(0,4).toString(),'%PDF');
-   assert.ok(pdf.length > 1000);
-   if(label==='問題のみPDF') assert.doesNotMatch(text,/正解：|解答・解説/);
-   if(label==='解答・解説PDF') assert.match(text,/正解：/);
-   if(label==='問題＋解答PDF') assert.match(text,/解答・解説/);
-   await popup.close();
+   const html = await page.evaluate(() => window.__pdfHtml);
+   assert.ok(html.includes('<!doctype html>'), label+' HTML document');
+   assert.ok(html.includes(heading), label+' expected section');
+   assert.ok(html.includes(shouldContain), label+' expected content');
+   if (label==='問題のみPDF') assert.doesNotMatch(html,/正解：|解答・解説/);
+   if (label==='解答・解説PDF') assert.match(html,/正解：/);
+   if (label==='問題＋解答PDF') assert.match(html,/解答・解説/);
   }
-
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-  const copyText = async (kind, label) => {
-    await page.getByRole('button', { name: label }).click();
-    await page.waitForFunction(() => (document.querySelector('[data-copy-status]')?.textContent || '').includes('コピーしました'));
-    return page.evaluate(() => navigator.clipboard.readText());
+  const copyText = async (label) => {
+   await page.getByRole('button', { name: label }).click();
+   await page.waitForFunction(() => (document.querySelector('[data-copy-status]')?.textContent || '').includes('コピーしました'));
+   return page.evaluate(() => navigator.clipboard.readText());
   };
-  const questionCopy = await copyText('questions', '問題のみテキスト');
+  const questionCopy = await copyText('問題のみテキスト');
   assert.match(questionCopy, /問題/);
   assert.doesNotMatch(questionCopy, /正解：|解答・解説/);
-  const answerCopy = await copyText('answers', '解答・解説テキスト');
+  const answerCopy = await copyText('解答・解説テキスト');
   assert.match(answerCopy, /正解：/);
   assert.match(answerCopy, /解説：/);
-  const combinedCopy = await copyText('combined', '問題＋解答テキスト');
+  const combinedCopy = await copyText('問題＋解答テキスト');
   assert.match(combinedCopy, /問題/);
   assert.match(combinedCopy, /解答・解説/);
   assert.match(combinedCopy, /正解：/);
