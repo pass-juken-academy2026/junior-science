@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
  const browser = await chromium.launch({headless:true});
  try {
   const page = await browser.newPage();
+  const pageErrors = []; page.on('pageerror', e => pageErrors.push(e.stack || e.message)); page.on('console', m => { if (m.type() === 'error') pageErrors.push('console: ' + m.text()); });
   await page.goto('http://127.0.0.1:4173/index.html');
   await page.click('[data-tab="6"]');
   await page.waitForSelector('[data-panel="6"].active');
@@ -27,8 +28,13 @@ const assert = require('node:assert/strict');
    ['問題＋解答PDF', '<section class="answers"><h1>解答・解説</h1>', '解答・解説']
   ]) {
    await page.evaluate(() => { window.__pdfHtml = ''; window.__pdfOpenCalls = 0; });
-   await page.getByRole('button',{name:label}).click();
-   await page.waitForFunction(() => window.__pdfOpenCalls > 0, null, { timeout: 5000 });
+   const target = page.getByRole('button',{name:label});
+   assert.equal(await target.count(), 1, 'button count: '+label);
+   await target.click();
+   await page.waitForFunction(() => window.__pdfOpenCalls > 0, null, { timeout: 5000 }).catch(async e => {
+    const diagnostic = await page.evaluate(() => ({calls:window.__pdfOpenCalls, mockLength:document.querySelector('[data-mock]')?.innerText?.slice(0,300), button:document.querySelector('[data-pdf-mock="questions"]')?.outerHTML, activePanel:document.querySelector('[data-panel="6"]')?.className}));
+    throw new Error('PDF export did not call window.open for '+label+'; '+JSON.stringify(diagnostic)+'; pageErrors='+pageErrors.join(' | '));
+   });
    const html = await page.evaluate(() => window.__pdfHtml);
    assert.ok(html.includes('<!doctype html>'), label+' HTML document');
    assert.ok(html.includes(heading), label+' expected section');
