@@ -4,39 +4,58 @@ const assert = require('node:assert/strict');
  const browser = await chromium.launch({headless:true});
  try {
   const page = await browser.newPage();
+  const pageErrors = []; page.on('pageerror', e => pageErrors.push(e.stack || e.message)); page.on('console', m => { if (m.type() === 'error') pageErrors.push('console: ' + m.text()); });
   await page.goto('http://127.0.0.1:4173/index.html');
   await page.click('[data-tab="6"]');
-  await page.click('[data-tab="6"]');
+  await page.waitForSelector('[data-panel="6"].active');
   await page.click('[data-start]');
   await page.waitForSelector('[data-mock] .answer');
-  for (const label of ['問題のみPDF','解答・解説PDF','問題＋解答PDF']) {
-   const pending = page.waitForEvent('popup');
-   await page.getByRole('button',{name:label}).click();
-   const popup = await pending;
-   await popup.waitForLoadState('domcontentloaded');
-   const text = await popup.locator('body').innerText();
-   const pdf = await popup.pdf({format:'A4'});
-   assert.equal(pdf.subarray(0,4).toString(),'%PDF');
-   assert.ok(pdf.length > 1000);
-   if(label==='問題のみPDF') assert.doesNotMatch(text,/正解：|解答・解説/);
-   if(label==='解答・解説PDF') assert.match(text,/正解：/);
-   if(label==='問題＋解答PDF') assert.match(text,/解答・解説/);
-   await popup.close();
+  await page.evaluate(() => {
+   window.__pdfHtml = '';
+   window.__pdfOpenCalls = 0;
+   Object.defineProperty(window, 'open', { configurable: true, value: () => {
+    window.__pdfOpenCalls++;
+    return { document: {
+     open() {},
+     write(html) { window.__pdfHtml = html; },
+     close() {}
+    }};
+   }});
+  });
+  for (const [label, heading, shouldContain] of [
+   ['問題のみPDF', '<h1>問題</h1>', '問題'],
+   ['解答・解説PDF', '<h1>解答・解説</h1>', '正解：'],
+   ['問題＋解答PDF', '<section class="answers"><h1>解答・解説</h1>', '解答・解説']
+  ]) {
+   await page.evaluate(() => { window.__pdfHtml = ''; window.__pdfOpenCalls = 0; });
+   const target = page.getByRole('button',{name:label});
+   assert.equal(await target.count(), 1, 'button count: '+label);
+   await target.click();
+   await page.waitForFunction(() => window.__pdfOpenCalls > 0, null, { timeout: 5000 }).catch(async e => {
+    const diagnostic = await page.evaluate(() => ({calls:window.__pdfOpenCalls, mockLength:document.querySelector('[data-mock]')?.innerText?.slice(0,300), button:document.querySelector('[data-pdf-mock="questions"]')?.outerHTML, activePanel:document.querySelector('[data-panel="6"]')?.className}));
+    throw new Error('PDF export did not call window.open for '+label+'; '+JSON.stringify(diagnostic)+'; pageErrors='+pageErrors.join(' | '));
+   });
+   const html = await page.evaluate(() => window.__pdfHtml);
+   assert.ok(html.includes('<!doctype html>'), label+' HTML document');
+   assert.ok(html.includes(heading), label+' expected section');
+   assert.ok(html.includes(shouldContain), label+' expected content');
+   if (label==='問題のみPDF') assert.doesNotMatch(html,/正解：|解答・解説/);
+   if (label==='解答・解説PDF') assert.match(html,/正解：/);
+   if (label==='問題＋解答PDF') assert.match(html,/解答・解説/);
   }
-
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-  const copyText = async (kind, label) => {
-    await page.getByRole('button', { name: label }).click();
-    await page.waitForFunction(() => (document.querySelector('[data-copy-status]')?.textContent || '').includes('コピーしました'));
-    return page.evaluate(() => navigator.clipboard.readText());
+  const copyText = async (label) => {
+   await page.getByRole('button', { name: label }).click();
+   await page.waitForFunction(() => (document.querySelector('[data-copy-status]')?.textContent || '').includes('コピーしました'));
+   return page.evaluate(() => navigator.clipboard.readText());
   };
-  const questionCopy = await copyText('questions', '問題のみテキスト');
+  const questionCopy = await copyText('問題のみテキスト');
   assert.match(questionCopy, /問題/);
   assert.doesNotMatch(questionCopy, /正解：|解答・解説/);
-  const answerCopy = await copyText('answers', '解答・解説テキスト');
+  const answerCopy = await copyText('解答・解説テキスト');
   assert.match(answerCopy, /正解：/);
   assert.match(answerCopy, /解説：/);
-  const combinedCopy = await copyText('combined', '問題＋解答テキスト');
+  const combinedCopy = await copyText('問題＋解答テキスト');
   assert.match(combinedCopy, /問題/);
   assert.match(combinedCopy, /解答・解説/);
   assert.match(combinedCopy, /正解：/);
